@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Optional, Any, Annotated
 from dotenv import load_dotenv
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, APIRouter
 from supabase import create_client, Client
 from services import process_and_notify_service
 from database import init_db
@@ -37,6 +37,7 @@ async def lifespan(app: FastAPI):
     logger.info("Backend shutting down...")
 
 app = FastAPI(lifespan=lifespan)
+router = APIRouter(prefix="/api/v1")
 
 def get_db() -> Client:
     """Yields a Supabase client instance."""
@@ -45,9 +46,9 @@ def get_db() -> Client:
 @app.get("/")
 def read_root():
     """Root endpoint to check service status."""
-    return {"status": "ok", "service": "PocketTranscribe Backend"}
+    return {"status": "ok", "service": "PocketTranscribe Backend", "version": "v1"}
 
-@app.post("/process-meeting")
+@router.post("/process-meeting")
 async def process_meeting(
     request: MeetingProcessRequest,
     background_tasks: BackgroundTasks,
@@ -88,7 +89,7 @@ async def process_meeting(
 
     return {"status": "processing_started", "meeting_id": final_meeting_id}
 
-@app.get("/meetings", response_model=dict[str, Any])
+@router.get("/meetings", response_model=dict[str, Any])
 async def get_meetings(
     page: Annotated[int, "Current page number"] = 1,
     limit: Annotated[int, "Number of items per page"] = 10,
@@ -146,7 +147,7 @@ async def get_meetings(
         logger.error("L7_ERROR: Failed to fetch meetings: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve meetings.")
 
-@app.get("/meetings/{meeting_id}", response_model=Optional[dict[str, Any]])
+@router.get("/meetings/{meeting_id}", response_model=Optional[dict[str, Any]])
 async def get_meeting(meeting_id: str) -> Optional[dict[str, Any]]:
     """Fetch a specific meeting."""
     with get_db_cursor() as cur:
@@ -156,7 +157,7 @@ async def get_meeting(meeting_id: str) -> Optional[dict[str, Any]]:
             raise HTTPException(status_code=404, detail="Meeting not found")
         return row_to_dict(cur, row)
 
-@app.delete("/meetings/{meeting_id}")
+@router.delete("/meetings/{meeting_id}")
 async def delete_meeting(meeting_id: str) -> dict[str, str]:
     """Delete a specific meeting."""
     with get_db_cursor(commit=True) as cur:
@@ -165,7 +166,7 @@ async def delete_meeting(meeting_id: str) -> dict[str, str]:
             raise HTTPException(status_code=404, detail="Meeting not found")
         return {"status": "deleted", "id": meeting_id}
 
-@app.patch("/meetings/{meeting_id}")
+@router.patch("/meetings/{meeting_id}")
 async def update_meeting(
     meeting_id: str, 
     request: UpdateMeetingRequest
@@ -178,7 +179,7 @@ async def update_meeting(
         )
         return {"status": "updated", "id": meeting_id, "title": request.title}
 
-@app.get("/profile/{user_id}", response_model=dict[str, Any])
+@router.get("/profile/{user_id}", response_model=dict[str, Any])
 async def get_profile(user_id: str) -> dict[str, Any]:
     """Fetch a user profile."""
     with get_db_cursor() as cur:
@@ -188,7 +189,7 @@ async def get_profile(user_id: str) -> dict[str, Any]:
             return {"id": user_id, "full_name": "", "avatar_url": None}
         return row_to_dict(cur, row) or {}
 
-@app.patch("/profile/{user_id}")
+@router.patch("/profile/{user_id}")
 async def update_profile(
     user_id: str, 
     request: ProfileUpdateRequest
@@ -221,3 +222,5 @@ async def update_profile(
                 cur.execute(update_query, tuple(params))
 
         return {"status": "updated", "profile": request.model_dump(exclude_none=True)}
+
+app.include_router(router)

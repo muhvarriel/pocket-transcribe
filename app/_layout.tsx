@@ -33,7 +33,8 @@ function RootLayoutNav() {
       lastNotificationResponse.notification.request.content.data.meeting_id &&
       session
     ) {
-      const notificationId = lastNotificationResponse.notification.request.identifier;
+      const notificationId =
+        lastNotificationResponse.notification.request.identifier;
       if (handledNotificationId.current === notificationId) return;
 
       const meetingId =

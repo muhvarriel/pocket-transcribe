@@ -1,21 +1,28 @@
 import Constants from "expo-constants";
 
 export const getApiUrl = () => {
-  // 1. Prioritize Environment Variable (for Prod/Stage or explicit overrides)
-  if (process.env.EXPO_PUBLIC_API_URL) {
-    return process.env.EXPO_PUBLIC_API_URL;
-  }
+  let baseUrl = "";
 
-  // 2. Dynamic Fallback for Local Development (Expo Go / Simulator)
-  if (__DEV__) {
+  // 1. Prioritize Environment Variable
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    baseUrl = process.env.EXPO_PUBLIC_API_URL;
+  }
+  // 2. Dynamic Fallback for Local Development
+  else if (__DEV__) {
     const hostUri =
       Constants?.expoConfig?.hostUri || Constants?.manifest?.debuggerHost;
     if (hostUri) {
       const ip = hostUri.split(":")[0];
-      return `http://${ip}:8000`;
+      baseUrl = `http://${ip}:8000`;
+    } else {
+      baseUrl = "http://localhost:8000";
     }
   }
+  // 3. Last Resort Fallback
+  else {
+    baseUrl = "http://localhost:8000";
+  }
 
-  // 3. Last Resort Fallback (Localhost)
-  return "http://localhost:8000";
+  // Ensure no trailing slash before appending /api/v1
+  return `${baseUrl.replace(/\/$/, "")}/api/v1`;
 };
