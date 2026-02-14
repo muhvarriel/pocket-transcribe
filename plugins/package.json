@@ -1,0 +1,18 @@
+{
+  "name": "pocket-transcribe-plugins",
+  "version": "1.0.0",
+  "main": "withBackgroundAudio.js",
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "^7.8.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0"
+  },
+  "private": true
+}

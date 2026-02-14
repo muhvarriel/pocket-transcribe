@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+supabase
+python-multipart
+httpx
+exponent-server-sdk
+openai
+slowapi
+requests
+psycopg2-binary
+python-dotenv
