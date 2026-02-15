@@ -199,7 +199,9 @@ export function useAudioRecorder() {
         }
 
         console.log("Triggering backend processing...");
-        const meetingId = Date.now().toString();
+        const meetingId =
+          Math.random().toString(36).substring(2, 15) +
+          Math.random().toString(36).substring(2, 15);
 
         const data = await audioService.notifyBackendToProcess({
           meetingId,

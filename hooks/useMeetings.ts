@@ -3,6 +3,7 @@ import { Alert } from "react-native";
 import { format, isToday, parseISO } from "date-fns";
 import { getApiUrl } from "../constants/Config";
 import { useAuthSession } from "./useAuthSession";
+import { getErrorMessage } from "../utils/errorUtils";
 import {
   Meeting,
   MeetingListItem,
@@ -23,6 +24,9 @@ export function useMeetingList() {
   const loadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isAlertActive = useRef(false);
+  const retryCount = useRef(0);
+  const MAX_RETRIES = 2;
 
   const groupMeetings = useCallback((data: MeetingListItem[]) => {
     const todayMeetings: MeetingListItem[] = [];
@@ -92,6 +96,8 @@ export function useMeetingList() {
         const rawData = resJson.data || [];
         const meta = resJson.meta || {};
 
+        retryCount.current = 0; // Reset on success
+
         const mappedMeetings: MeetingListItem[] = rawData.map((m: Meeting) => ({
           ...m,
           date: m.created_at
@@ -121,18 +127,39 @@ export function useMeetingList() {
         setHasMore(newHasMore);
 
         if (!reset) setPage(pageNum);
-      } catch (e: any) {
-        if (e.name === "AbortError") return;
+      } catch (e: unknown) {
+        if (e instanceof Error && e.name === "AbortError") return;
         console.error("Error fetching meetings:", e);
         if (!isSilent) {
+          const errorMessage = getErrorMessage(e);
           let message =
             "Could not load your meetings. Please check your internet connection.";
-          if (e.message.includes("Network request failed")) {
+          if (errorMessage.includes("Network request failed")) {
             message = "Network error. Please check your connection.";
-          } else if (e.message.includes("500")) {
+          } else if (errorMessage.includes("500")) {
             message = "Server error. We are working on it.";
           }
-          Alert.alert("Oops!", message);
+
+          if (retryCount.current < MAX_RETRIES) {
+            retryCount.current += 1;
+            console.log(
+              `Retrying fetch (${retryCount.current}/${MAX_RETRIES})...`,
+            );
+            setTimeout(() => {
+              fetchMeetings(pageNum, reset, searchQuery, activeFilter, true);
+            }, 3000);
+          } else if (!isAlertActive.current) {
+            isAlertActive.current = true;
+            Alert.alert("Oops!", message, [
+              {
+                text: "OK",
+                onPress: () => {
+                  isAlertActive.current = false;
+                  retryCount.current = 0;
+                },
+              },
+            ]);
+          }
         }
       } finally {
         if (abortControllerRef.current === controller) {
@@ -162,6 +189,9 @@ export function useMeetingList() {
 export function useMeetingDetails(id?: string) {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [loading, setLoading] = useState(true);
+  const isAlertActive = useRef(false);
+  const retryCount = useRef(0);
+  const MAX_RETRIES = 2;
 
   const fetchDetails = useCallback(async () => {
     if (!id) return;
@@ -170,9 +200,25 @@ export function useMeetingDetails(id?: string) {
       const response = await fetch(`${getApiUrl()}/meetings/${id}`);
       const data = (await response.json()) as Meeting;
       setMeeting(data);
+      retryCount.current = 0; // Reset on success
     } catch (error) {
       console.error("Error fetching meeting:", error);
-      Alert.alert("Error", "Could not load meeting details.");
+
+      if (retryCount.current < MAX_RETRIES) {
+        retryCount.current += 1;
+        setTimeout(fetchDetails, 3000);
+      } else if (!isAlertActive.current) {
+        isAlertActive.current = true;
+        Alert.alert("Error", "Could not load meeting details.", [
+          {
+            text: "OK",
+            onPress: () => {
+              isAlertActive.current = false;
+              retryCount.current = 0;
+            },
+          },
+        ]);
+      }
     } finally {
       setLoading(false);
     }

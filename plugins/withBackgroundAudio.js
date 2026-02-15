@@ -66,6 +66,32 @@ const withAndroidBackgroundAudio = (config) => {
       "android.permission.FOREGROUND_SERVICE_MICROPHONE",
     );
 
+    // Add Service definition to Manifest
+    const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(
+      config.modResults,
+    );
+
+    // Manually ensure the service is present in the application tag
+    if (!Array.isArray(mainApplication.service)) {
+      mainApplication.service = [];
+    }
+
+    const serviceName = "com.pockettranscribe.service.AudioRecordingService";
+    const existingService = mainApplication.service.find(
+      (s) => s.$["android:name"] === serviceName,
+    );
+
+    if (!existingService) {
+      mainApplication.service.push({
+        $: {
+          "android:name": serviceName,
+          "android:enabled": "true",
+          "android:exported": "false",
+          "android:foregroundServiceType": "microphone",
+        },
+      });
+    }
+
     return config;
   });
 };

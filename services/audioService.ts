@@ -14,11 +14,12 @@ export const audioService = {
     const fileName = `${userId}/${Date.now()}.${ext}`;
 
     const formData = new FormData();
+    // @ts-expect-error: React Native FormData extends the spec but lacks compatible TS types for file objects
     formData.append("file", {
       uri,
       name: fileName,
       type: `audio/${ext}`,
-    } as any);
+    });
 
     const { error } = await supabase.storage
       .from("recordings")

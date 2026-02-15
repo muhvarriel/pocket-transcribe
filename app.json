@@ -18,7 +18,8 @@
       "bundleIdentifier": "com.pocket-transcribe.app",
       "appleTeamId": "CRKMRUM2J5",
       "infoPlist": {
-        "UIBackgroundModes": ["audio", "fetch"]
+        "UIBackgroundModes": ["audio", "fetch"],
+        "NSMicrophoneUsageDescription": "Allow PocketTranscribe to access your microphone to record meetings even when the app is in the background."
       }
     },
     "android": {

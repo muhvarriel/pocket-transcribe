@@ -16,6 +16,7 @@ import {
 } from "../context/NotificationContext";
 import { Colors } from "../constants/Colors";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ErrorBoundary } from "../components/ErrorBoundary";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -211,12 +212,14 @@ function RootLayoutNav() {
 
 export default function Layout() {
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NotificationProvider>
-          <RootLayoutNav />
-        </NotificationProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <NotificationProvider>
+            <RootLayoutNav />
+          </NotificationProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

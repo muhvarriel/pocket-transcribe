@@ -19,6 +19,7 @@ import { PrimaryButton } from "../../components/PrimaryButton";
 import { useAuth } from "../../context/AuthContext";
 import * as ImagePicker from "expo-image-picker";
 import { getApiUrl } from "../../constants/Config";
+import { getErrorMessage } from "../../utils/errorUtils";
 
 export default function EditProfileScreen() {
   const router = useRouter();
@@ -50,7 +51,7 @@ export default function EditProfileScreen() {
       const data = await res.json();
       if (data.avatar_url) setAvatarUrl(data.avatar_url);
     } catch (e: unknown) {
-      console.error("Error fetching profile:", e);
+      console.error("Error fetching profile:", getErrorMessage(e));
     }
   };
 
@@ -113,9 +114,10 @@ export default function EditProfileScreen() {
       if (selectedImage) {
         try {
           finalAvatarUrl = await uploadImageToSupabase(selectedImage);
-        } catch (e: any) {
-          console.error("Upload failed:", e);
-          throw new Error(`Profile picture upload failed: ${e.message}`);
+        } catch (e: unknown) {
+          const errorMessage = getErrorMessage(e);
+          console.error("Upload failed:", errorMessage);
+          throw new Error(`Profile picture upload failed: ${errorMessage}`);
         }
       }
 
@@ -169,10 +171,7 @@ export default function EditProfileScreen() {
       ]);
     } catch (error: unknown) {
       console.error("Update Error:", error);
-      Alert.alert(
-        "Error",
-        error instanceof Error ? error.message : "An error occurred",
-      );
+      Alert.alert("Error", getErrorMessage(error));
     } finally {
       setLoading(false);
     }
