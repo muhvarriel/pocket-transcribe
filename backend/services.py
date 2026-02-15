@@ -39,11 +39,11 @@ async def _update_meeting_status(meeting_id: str, status: str, db: Client, updat
             query = f"UPDATE meetings SET {set_clause} WHERE id = %s"
             cur.execute(query, list(data.values()) + [meeting_id])
     except Exception as e:
-        logger.error("L7_DATABASE_ERROR: Failed to update status: %s", e)
+        logger.error("DATABASE_ERROR: Failed to update status: %s", e)
         try:
             db.table("meetings").update(data).eq("id", meeting_id).execute()
         except Exception as ex:
-            logger.error("L7_FALLBACK_ERROR: Supabase update failed: %s", ex)
+            logger.error("FALLBACK_ERROR: Supabase update failed: %s", ex)
 
 async def _download_audio_async(url: str, dest_path: str) -> None:
     """Safely download audio with timeout and retry support."""
@@ -58,9 +58,9 @@ async def process_and_notify_service(
 ) -> None:
     """
     Orchestrates the meeting processing lifecycle.
-    Implements L7 standards for error isolation and clear workflow.
+    Implements standards for error isolation and clear workflow.
     """
-    logger.info("L7_PROCESS: Starting processing lifecycle for meeting %s", meeting_id)
+    logger.info("PROCESS: Starting processing lifecycle for meeting %s", meeting_id)
 
     # 1. Initialization
     await _update_meeting_status(meeting_id, "processing", db)
@@ -77,7 +77,7 @@ async def process_and_notify_service(
                 
                 await _download_audio_async(audio_url, temp_audio_path)
                 
-                logger.info("L7_AI: Commencing transcription...")
+                logger.info("AI: Commencing transcription...")
                 with open(temp_audio_path, "rb") as audio_file:
                     transcription = client.audio.transcriptions.create(
                         model="whisper-1", file=audio_file, response_format="json"
@@ -85,7 +85,7 @@ async def process_and_notify_service(
                     transcript = getattr(transcription, "text", "")
 
                 if transcript:
-                    logger.info("L7_AI: Generating summary...")
+                    logger.info("AI: Generating summary...")
                     completion = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -97,9 +97,9 @@ async def process_and_notify_service(
                     )
                     summary = cast(str, completion.choices[0].message.content)
         else:
-            logger.warning("L7_MOCK: Proceeding with simulated data due to missing credentials.")
+            logger.warning("MOCK: Proceeding with simulated data due to missing credentials.")
             await asyncio.sleep(1)
-            transcript = "Simulated high-quality transcript for L7 verification."
+            transcript = "Simulated high-quality transcript for verification."
             summary = "Meeting focused on excellence and architectural purity."
 
         # 3. Finalization
@@ -115,7 +115,7 @@ async def process_and_notify_service(
             await _send_push_notification(meeting_id, summary, push_token)
 
     except Exception as e:
-        logger.error("L7_CRITICAL_FAILURE: meeting %s processing halted: %s", meeting_id, e, exc_info=True)
+        logger.error("CRITICAL_FAILURE: meeting %s processing halted: %s", meeting_id, e, exc_info=True)
         await _update_meeting_status(meeting_id, "failed", db)
 
 async def _send_push_notification(meeting_id: str, summary: str, push_token: str) -> None:
@@ -130,4 +130,4 @@ async def _send_push_notification(meeting_id: str, summary: str, push_token: str
         )
         PushClient().publish(message)
     except Exception as e:
-        logger.error("L7_NOTIFICATION_ERROR: Status notification failed: %s", e)
+        logger.error("NOTIFICATION_ERROR: Status notification failed: %s", e)

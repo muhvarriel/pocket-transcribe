@@ -144,7 +144,7 @@ async def get_meetings(
                 }
             }
     except Exception as e:
-        logger.error("L7_ERROR: Failed to fetch meetings: %s", e, exc_info=True)
+        logger.error("ERROR: Failed to fetch meetings: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve meetings.")
 
 @router.get("/meetings/{meeting_id}", response_model=Optional[dict[str, Any]])

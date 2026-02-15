@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
     """
     Context manager for database connection and cursor.
-    Implements L7 standards for connection integrity and explicit error surfacing.
+    Implements standards for connection integrity and explicit error surfacing.
     """
     db_url = os.environ.get("DIRECT_DB_URL")
     if not db_url:
-        logger.error("L7_CONFIG_ERROR: DIRECT_DB_URL is missing.")
+        logger.error("CONFIG_ERROR: DIRECT_DB_URL is missing.")
         raise HTTPException(
             status_code=500, detail="Database configuration is incomplete."
         )
@@ -34,17 +34,17 @@ def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
         except Exception as e:
             if commit and conn:
                 conn.rollback()
-            logger.error("L7_QUERY_ERROR: Transaction failed: %s", e)
+            logger.error("QUERY_ERROR: Transaction failed: %s", e)
             raise e
         finally:
             cur.close()
     except psycopg2.Error as e:
-        logger.error("L7_CONN_ERROR: Postgres connection failed: %s", e)
+        logger.error("CONN_ERROR: Postgres connection failed: %s", e)
         raise HTTPException(
             status_code=500, detail="Database connection could not be established."
         ) from e
     except Exception as e:
-        logger.error("L7_UNHANDLED_ERROR: Unified database handler caught: %s", e)
+        logger.error("UNHANDLED_ERROR: Unified database handler caught: %s", e)
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail="Critical service failure.") from e

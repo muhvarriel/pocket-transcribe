@@ -12,7 +12,7 @@ The mobile application is built on React Native and the Expo SDK, utilizing a ho
 
 - **Data Access Layer**: Abstracted via custom React hooks that interface with the Supabase client and backend REST endpoints.
 - **State Management**: Orchestrated through Context API for global session and notification states, and granular local state for UI transitions.
-- **Media Processing**: Leverages the Expo-AV platform for low-latency audio capture with background execution capabilities.
+- **Media Processing**: Leverages the expo-audio platform for low-latency audio capture with background execution capabilities.
 
 ### Backend Infrastructure
 
