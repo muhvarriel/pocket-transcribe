@@ -1,16 +1,19 @@
+"""
+Low-level database utilities for PocketTranscribe.
+Provides context managers for database cursors and row conversion helpers.
+"""
 import os
-import contextlib
 import logging
+from contextlib import contextmanager
 from typing import Generator, Any, Optional
 import psycopg2
 from psycopg2.extensions import cursor
 from fastapi import HTTPException
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@contextlib.contextmanager
+@contextmanager
 def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
     """
     Context manager for database connection and cursor.
@@ -26,9 +29,9 @@ def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
     conn = None
     try:
         conn = psycopg2.connect(db_url, connect_timeout=10)
-        cur = conn.cursor()
+        _cursor = conn.cursor()
         try:
-            yield cur
+            yield _cursor
             if commit:
                 conn.commit()
         except Exception as e:
@@ -37,7 +40,7 @@ def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
             logger.error("QUERY_ERROR: Transaction failed: %s", e)
             raise e
         finally:
-            cur.close()
+            _cursor.close()
     except psycopg2.Error as e:
         logger.error("CONN_ERROR: Postgres connection failed: %s", e)
         raise HTTPException(
@@ -52,8 +55,8 @@ def get_db_cursor(commit: bool = False) -> Generator[cursor, None, None]:
         if conn:
             conn.close()
 
-def row_to_dict(cursor: cursor, row: Any) -> Optional[dict[str, Any]]:
+def row_to_dict(cur: cursor, row: Any) -> Optional[dict[str, Any]]:
     """Strictly typed conversion of database rows to dictionary format."""
-    if not row or not cursor.description:
+    if not row or not cur.description:
         return None
-    return {col[0]: row[i] for i, col in enumerate(cursor.description)}
+    return {col[0]: row[i] for i, col in enumerate(cur.description)}

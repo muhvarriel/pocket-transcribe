@@ -1,3 +1,7 @@
+"""
+Database initialization and core configuration for PocketTranscribe.
+Handles Supabase setup and migration management.
+"""
 import os
 import logging
 from typing import Optional
@@ -5,13 +9,10 @@ import psycopg2
 from psycopg2.extensions import connection, cursor
 from dotenv import load_dotenv
 
-logger = logging.getLogger(__name__)
-
+# Load environment variables
 load_dotenv()
 
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 # Storage Constants
 AVATARS_BUCKET = "avatars"
@@ -25,56 +26,45 @@ def get_db_connection() -> connection:
     return psycopg2.connect(db_url)
 
 def _create_tables(cur: cursor) -> None:
-    """Ensure the required database tables exist."""
+    """Initialize necessary database tables."""
     logger.info("MIGRATION: Ensuring 'meetings' table exists...")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS meetings (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            user_id UUID,
+            user_id UUID NOT NULL,
             title TEXT NOT NULL,
+            status TEXT DEFAULT 'pending',
             audio_url TEXT,
             transcript TEXT,
             summary TEXT,
-            status TEXT DEFAULT 'processing',
-            duration INTEGER DEFAULT 0,
+            duration INTEGER,
             created_at TIMESTAMPTZ DEFAULT now(),
             updated_at TIMESTAMPTZ DEFAULT now()
         );
     """)
 
-    # Migration: Ensure updated_at exists for existing tables
-    cur.execute(
-        "ALTER TABLE meetings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();"
-    )
-
-    # Enable RLS
     logger.info("MIGRATION: Enabling RLS on 'meetings' table...")
     cur.execute("ALTER TABLE meetings ENABLE ROW LEVEL SECURITY;")
 
-    # Optional: Add indexes
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);")
-
-    # Create profiles table (Mirroring auth.users concepts)
     logger.info("MIGRATION: Ensuring 'profiles' table exists...")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS profiles (
-            id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+            id UUID PRIMARY KEY,
             full_name TEXT,
             avatar_url TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
             updated_at TIMESTAMPTZ DEFAULT now()
         );
     """)
-
-    # Enable RLS on profiles
     logger.info("MIGRATION: Enabling RLS on 'profiles' table...")
     cur.execute("ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;")
 
 def _ensure_storage_buckets(cur: cursor) -> None:
-    """Ensure storage buckets exist."""
+    """Ensure Supabase storage buckets exist."""
     logger.info("MIGRATION: Ensuring storage buckets exist...")
     cur.execute(f"""
         INSERT INTO storage.buckets (id, name, public)
-        VALUES 
+        VALUES
             ('{AVATARS_BUCKET}', '{AVATARS_BUCKET}', true),
             ('{RECORDINGS_BUCKET}', '{RECORDINGS_BUCKET}', true)
         ON CONFLICT (id) DO NOTHING;
@@ -82,16 +72,16 @@ def _ensure_storage_buckets(cur: cursor) -> None:
     logger.info("MIGRATION: Storage buckets ensured.")
 
 def _configure_storage_policies(cur: cursor) -> None:
-    """Configure storage RLS policies."""
+    """Configure RLS policies for storage buckets."""
     logger.info("MIGRATION: Configuring storage policies...")
     cur.execute(f"""
         BEGIN;
-        
+
         -- Avatars: Public Read
         DROP POLICY IF EXISTS "Public Access to Avatars" ON storage.objects;
         CREATE POLICY "Public Access to Avatars" ON storage.objects
-        FOR SELECT USING ( bucket_id = '{AVATARS_BUCKET}' );
-        
+        FOR SELECT USING (bucket_id = '{AVATARS_BUCKET}');
+
         -- Avatars: Auth Upload
         DROP POLICY IF EXISTS "Auth Upload Avatars" ON storage.objects;
         CREATE POLICY "Auth Upload Avatars" ON storage.objects
@@ -99,11 +89,11 @@ def _configure_storage_policies(cur: cursor) -> None:
             bucket_id = '{AVATARS_BUCKET}' AND
             auth.role() = 'authenticated'
         );
-        
+
         -- Avatars: Auth Update/Delete (Own files)
         DROP POLICY IF EXISTS "Auth Update Own Avatars" ON storage.objects;
         CREATE POLICY "Auth Update Own Avatars" ON storage.objects
-        FOR UPDATE USING (
+        FOR UPDATE WITH CHECK (
             bucket_id = '{AVATARS_BUCKET}' AND
             auth.uid() = owner
         );
@@ -114,7 +104,7 @@ def _configure_storage_policies(cur: cursor) -> None:
             bucket_id = '{AVATARS_BUCKET}' AND
             auth.uid() = owner
         );
-        
+
         -- Recordings: Auth Upload
         DROP POLICY IF EXISTS "Auth Upload Recordings" ON storage.objects;
         CREATE POLICY "Auth Upload Recordings" ON storage.objects
@@ -122,7 +112,7 @@ def _configure_storage_policies(cur: cursor) -> None:
             bucket_id = '{RECORDINGS_BUCKET}' AND
             auth.role() = 'authenticated'
         );
-        
+
         -- Recordings: Auth Read (Own files only)
         DROP POLICY IF EXISTS "Auth Read Own Recordings" ON storage.objects;
         CREATE POLICY "Auth Read Own Recordings" ON storage.objects
@@ -130,20 +120,16 @@ def _configure_storage_policies(cur: cursor) -> None:
             bucket_id = '{RECORDINGS_BUCKET}' AND
             auth.uid() = owner
         );
-        
+
         COMMIT;
     """)
     logger.info("MIGRATION: Storage policies applied.")
 
 def init_db() -> None:
-    """
-    Connects to the database using DIRECT_DB_URL and ensures
-    that the required tables exist.
-    """
+    """Run database migrations and initialization."""
     db_url = os.environ.get("DIRECT_DB_URL")
-
     if not db_url:
-        logger.warning("MIGRATION: DIRECT_DB_URL not set. Skipping auto-migration.")
+        logger.warning("MIGRATION: DIRECT_DB_URL not found. Skipping auto-table creation.")
         logger.info("TIP: Add DIRECT_DB_URL to your .env file to enable auto-table creation.")
         return
 
@@ -165,8 +151,6 @@ def init_db() -> None:
                 "MIGRATION WARNING: Could not auto-create storage buckets or policies: %s",
                 e
             )
-            if conn:
-                conn.rollback()
 
         logger.info("MIGRATION: Database initialized successfully.")
         cur.close()
@@ -175,11 +159,6 @@ def init_db() -> None:
     finally:
         if conn:
             conn.close()
-
-if __name__ == "__main__":
-    # Allow running standalone
-    logging.basicConfig(level=logging.INFO)
-    init_db()
 
 if __name__ == "__main__":
     # Allow running standalone

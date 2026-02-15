@@ -6,14 +6,14 @@ import asyncio
 import os
 import tempfile
 import logging
+from typing import TYPE_CHECKING, Optional, cast, Any
+
 import httpx
 from supabase import Client
 from exponent_server_sdk import PushClient, PushMessage
 from database_utils import get_db_cursor
 
 # Handle OpenAI import with strict type checking
-from typing import TYPE_CHECKING, Optional, cast, Any
-
 if TYPE_CHECKING:
     from openai import OpenAI
 else:
@@ -30,7 +30,10 @@ SUMMARY_PROMPT = (
     "Do not use JSON. Just return the summary text."
 )
 
-async def _update_meeting_status(meeting_id: str, status: str, db: Client, updates: Optional[dict[str, Any]] = None) -> None:
+
+async def _update_meeting_status(
+    meeting_id: str, status: str, db: Client, updates: Optional[dict[str, Any]] = None
+) -> None:
     """Helper to update meeting status with fallback logic."""
     try:
         data = {"status": status, **(updates or {})}
@@ -44,6 +47,7 @@ async def _update_meeting_status(meeting_id: str, status: str, db: Client, updat
             db.table("meetings").update(data).eq("id", meeting_id).execute()
         except Exception as ex:
             logger.error("FALLBACK_ERROR: Supabase update failed: %s", ex)
+            raise
 
 async def _download_audio_async(url: str, dest_path: str) -> None:
     """Safely download audio with timeout and retry support."""
@@ -74,13 +78,15 @@ async def process_and_notify_service(
             client = OpenAI(api_key=openai_api_key)
             with tempfile.TemporaryDirectory() as temp_dir:
                 temp_audio_path = os.path.join(temp_dir, "process_audio.m4a")
-                
+
                 await _download_audio_async(audio_url, temp_audio_path)
-                
+
                 logger.info("AI: Commencing transcription...")
                 with open(temp_audio_path, "rb") as audio_file:
                     transcription = client.audio.transcriptions.create(
-                        model="whisper-1", file=audio_file, response_format="json"
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="json",
                     )
                     transcript = getattr(transcription, "text", "")
 
@@ -104,9 +110,9 @@ async def process_and_notify_service(
 
         # 3. Finalization
         await _update_meeting_status(
-            meeting_id, 
-            "completed", 
-            db, 
+            meeting_id,
+            "completed",
+            db,
             updates={"transcript": transcript, "summary": summary}
         )
 
@@ -115,8 +121,12 @@ async def process_and_notify_service(
             await _send_push_notification(meeting_id, summary, push_token)
 
     except Exception as e:
-        logger.error("CRITICAL_FAILURE: meeting %s processing halted: %s", meeting_id, e, exc_info=True)
+        logger.error(
+            "CRITICAL_FAILURE: meeting %s processing halted: %s",
+            meeting_id, e, exc_info=True
+        )
         await _update_meeting_status(meeting_id, "failed", db)
+        raise
 
 async def _send_push_notification(meeting_id: str, summary: str, push_token: str) -> None:
     """Isolated notification service."""

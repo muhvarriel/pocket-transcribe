@@ -1,11 +1,20 @@
+"""
+API entry point for PocketTranscribe.
+Handles routing, rate limiting, and core endpoint logic.
+"""
 import os
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional, Any, Annotated
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, APIRouter
 from supabase import create_client, Client
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.requests import Request
+
 from services import process_and_notify_service
 from database import init_db
 from database_utils import get_db_cursor, row_to_dict
@@ -27,7 +36,7 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://your-project.supabase.co"
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "your-anon-key")
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """
     Handle startup and shutdown events using lifespan API.
     """
@@ -36,7 +45,12 @@ async def lifespan(app: FastAPI):
     yield
     logger.info("Backend shutting down...")
 
+# Initialize Rate Limiter
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 router = APIRouter(prefix="/api/v1")
 
 def get_db() -> Client:
@@ -44,18 +58,21 @@ def get_db() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.get("/")
-def read_root():
+@limiter.limit("60/minute")
+def read_root(request: Request):
     """Root endpoint to check service status."""
     return {"status": "ok", "service": "PocketTranscribe Backend", "version": "v1"}
 
 @router.post("/process-meeting")
+@limiter.limit("5/minute")
 async def process_meeting(
-    request: MeetingProcessRequest,
+    request_data: MeetingProcessRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Annotated[Client, Depends(get_db)],
 ) -> dict[str, str]:
     """Endpoint to trigger meeting processing."""
-    if not request.meeting_id or not request.push_token:
+    if not request_data.meeting_id or not request_data.push_token:
         raise HTTPException(
             status_code=400, detail="Missing meeting_id or push_token"
         )
@@ -70,10 +87,10 @@ async def process_meeting(
             query,
             (
                 "New Meeting",
-                request.user_id,
+                request_data.user_id,
                 "processing",
-                request.audio_url,
-                request.duration,
+                request_data.audio_url,
+                request_data.duration,
             ),
         )
         final_meeting_id = str(cur.fetchone()[0])
@@ -82,21 +99,24 @@ async def process_meeting(
     background_tasks.add_task(
         process_and_notify_service,
         final_meeting_id,
-        request.audio_url,
-        request.push_token,
+        request_data.audio_url,
+        request_data.push_token,
         db,
     )
 
     return {"status": "processing_started", "meeting_id": final_meeting_id}
 
 @router.get("/meetings", response_model=dict[str, Any])
+@limiter.limit("30/minute")
 async def get_meetings(
+    request: Request,
     page: Annotated[int, "Current page number"] = 1,
     limit: Annotated[int, "Number of items per page"] = 10,
     search: Annotated[Optional[str], "Search query for titles"] = None,
     status: Annotated[Optional[str], "Filter by meeting status"] = None,
     user_id: Annotated[Optional[str], "Owner user ID"] = None,
 ) -> dict[str, Any]:
+    # pylint: disable=too-many-arguments,too-many-locals,too-many-positional-arguments,unused-argument
     """Fetch meetings with pagination, search, and filtering."""
     try:
         with get_db_cursor() as cur:
@@ -116,7 +136,7 @@ async def get_meetings(
                 params.append(f"%{search}%")
 
             where_clause = " WHERE " + " AND ".join(conditions)
-            
+
             # Count query for pagination meta
             count_query = f"SELECT COUNT(*) FROM meetings {where_clause}"
             cur.execute(count_query, params)
@@ -145,10 +165,12 @@ async def get_meetings(
             }
     except Exception as e:
         logger.error("ERROR: Failed to fetch meetings: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to retrieve meetings.")
+        raise HTTPException(status_code=500, detail="Failed to retrieve meetings.") from e
 
 @router.get("/meetings/{meeting_id}", response_model=Optional[dict[str, Any]])
-async def get_meeting(meeting_id: str) -> Optional[dict[str, Any]]:
+@limiter.limit("60/minute")
+async def get_meeting(meeting_id: str, request: Request) -> Optional[dict[str, Any]]:
+    # pylint: disable=unused-argument
     """Fetch a specific meeting."""
     with get_db_cursor() as cur:
         cur.execute("SELECT * FROM meetings WHERE id = %s", (meeting_id,))
@@ -158,7 +180,9 @@ async def get_meeting(meeting_id: str) -> Optional[dict[str, Any]]:
         return row_to_dict(cur, row)
 
 @router.delete("/meetings/{meeting_id}")
-async def delete_meeting(meeting_id: str) -> dict[str, str]:
+@limiter.limit("20/minute")
+async def delete_meeting(meeting_id: str, request: Request) -> dict[str, str]:
+    # pylint: disable=unused-argument
     """Delete a specific meeting."""
     with get_db_cursor(commit=True) as cur:
         cur.execute("DELETE FROM meetings WHERE id = %s", (meeting_id,))
@@ -167,20 +191,25 @@ async def delete_meeting(meeting_id: str) -> dict[str, str]:
         return {"status": "deleted", "id": meeting_id}
 
 @router.patch("/meetings/{meeting_id}")
+@limiter.limit("20/minute")
 async def update_meeting(
-    meeting_id: str, 
-    request: UpdateMeetingRequest
+    meeting_id: str,
+    request_data: UpdateMeetingRequest,
+    request: Request
 ) -> dict[str, str]:
+    # pylint: disable=unused-argument
     """Update a meeting title."""
     with get_db_cursor(commit=True) as cur:
         cur.execute(
             "UPDATE meetings SET title = %s, updated_at = now() WHERE id = %s",
-            (request.title, meeting_id)
+            (request_data.title, meeting_id)
         )
-        return {"status": "updated", "id": meeting_id, "title": request.title}
+        return {"status": "updated", "id": meeting_id, "title": request_data.title}
 
 @router.get("/profile/{user_id}", response_model=dict[str, Any])
-async def get_profile(user_id: str) -> dict[str, Any]:
+@limiter.limit("30/minute")
+async def get_profile(user_id: str, request: Request) -> dict[str, Any]:
+    # pylint: disable=unused-argument
     """Fetch a user profile."""
     with get_db_cursor() as cur:
         cur.execute("SELECT * FROM profiles WHERE id = %s", (user_id,))
@@ -190,10 +219,13 @@ async def get_profile(user_id: str) -> dict[str, Any]:
         return row_to_dict(cur, row) or {}
 
 @router.patch("/profile/{user_id}")
+@limiter.limit("10/minute")
 async def update_profile(
-    user_id: str, 
-    request: ProfileUpdateRequest
+    user_id: str,
+    request_data: ProfileUpdateRequest,
+    request: Request
 ) -> dict[str, Any]:
+    # pylint: disable=unused-argument
     """Update a user profile."""
     with get_db_cursor(commit=True) as cur:
         cur.execute("SELECT id FROM profiles WHERE id = %s", (user_id,))
@@ -202,17 +234,17 @@ async def update_profile(
         if not exists:
             cur.execute(
                 "INSERT INTO profiles (id, full_name, avatar_url) VALUES (%s, %s, %s)",
-                (user_id, request.full_name, request.avatar_url)
+                (user_id, request_data.full_name, request_data.avatar_url)
             )
         else:
             updates: list[str] = []
             params: list[Any] = []
-            if request.full_name is not None:
+            if request_data.full_name is not None:
                 updates.append("full_name = %s")
-                params.append(request.full_name)
-            if request.avatar_url is not None:
+                params.append(request_data.full_name)
+            if request_data.avatar_url is not None:
                 updates.append("avatar_url = %s")
-                params.append(request.avatar_url)
+                params.append(request_data.avatar_url)
             if updates:
                 params.append(user_id)
                 update_query = (
@@ -221,6 +253,6 @@ async def update_profile(
                 )
                 cur.execute(update_query, tuple(params))
 
-        return {"status": "updated", "profile": request.model_dump(exclude_none=True)}
+        return {"status": "updated", "profile": request_data.model_dump(exclude_none=True)}
 
 app.include_router(router)
