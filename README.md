@@ -2,11 +2,42 @@
 
 An enterprise-grade, full-stack application for automated meeting transcription and summarization. This system provides a seamless recording-to-insight pipeline, leveraging high-accuracy AI models for reliable background processing and persistent data management.
 
-## Architecture
+## System Architecture
 
-The system follows a decoupled, service-oriented architecture designed for scalability and state persistence.
+```mermaid
+graph TD
+    subgraph Mobile_App ["Mobile Application (React Native / Expo)"]
+        UI[UI Layer - React Components]
+        Context[State - Context API]
+        Audio[Audio Engine - expo-audio]
+        Hooks[Data Layer - Custom Hooks]
+    end
 
-### Mobile Infrastructure
+    subgraph Backend_Services ["Backend Infrastructure (FastAPI)"]
+        API[API Layer - REST Endpoints]
+        Worker[Background Tasks - AI Processing]
+        AI[AI Models - Whisper-1 / GPT-4o]
+    end
+
+    subgraph Data_Persistence ["Data & Security (Supabase)"]
+        Auth[Authentication]
+        Storage[S3 Storage - Audio Files]
+        DB[(PostgreSQL - RLS Enabled)]
+    end
+
+    UI <--> Context
+    Context <--> Hooks
+    Audio --> UI
+    Hooks <--> Auth
+    Hooks --> Storage
+    Hooks <--> API
+    API <--> Worker
+    Worker --> AI
+    Worker <--> DB
+    API <--> DB
+```
+
+### Core Infrastructure
 
 The mobile application is built on React Native and the Expo SDK, utilizing a hooked, layered architecture to maintain separation of concerns between state management and the view layer.
 
@@ -30,6 +61,18 @@ A Python-based FastAPI service handles computationally intensive operations and 
 4. Data is persisted to PostgreSQL under strict RLS policies.
 5. The user is notified via Expo Push Notifications upon completion.
 
+## Engineering Principles
+
+To ensure maintainability and scalability, the following principles were applied throughout the development:
+
+- **Layered Architecture**: Strict separation between UI, Business Logic (Hooks), and Data Access (Services/Clients).
+- **Type Safety**: End-to-end TypeScript on the frontend and Pydantic models on the backend to minimize runtime errors.
+- **Asynchronous Processing**: Non-blocking background workers for AI-heavy tasks, ensuring high responsiveness for mobile users.
+- **Security First**:
+  - **Row Level Security (RLS)**: Direct database access from the client is restricted at the PostgreSQL level.
+  - **Service Role Governance**: Sensitive operations use the Supabase Service Role solely within the secure backend environment.
+  - **Environment Abstraction**: Zero hardcoded secrets; strictly controlled via `.env` files.
+
 ### Architecture Decisions
 
 - **Frontend Framework**: **React Native with Expo** was chosen for its rapid development cycle, cross-platform compatibility, and easy native module integration via Config Plugins.
@@ -48,7 +91,7 @@ With more time, priority would be given to:
 4.  **E2E Testing**: Automated testing with Detox or Maestro for critical flows.
 5.  **CI/CD Pipeline**: Automated EAS Build and Submit workflows.
 
-## Prerequisites
+## Getting Started
 
 ### Platform Requirements
 
