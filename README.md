@@ -258,6 +258,14 @@ To receive push notifications on a physical iOS device, you must configure the f
 > 2. Build and run the app.
 > 3. Once the app ID is configured with Push Notifications in the portal, restore the entitlement.
 
+#### Missing Team ID or Provisioning Errors
+
+If you see an error like `Provisioning profile ... doesn't include the Push Notifications capability`:
+
+1. Ensure your `appleTeamId` in `app.json` is correct.
+2. Run `yes | npx expo prebuild --clean` to regenerate the project.
+3. If error persists, follow the "Entitlement Mismatch" steps above.
+
 ### Building for Production
 
 #### Running Release Builds Locally
